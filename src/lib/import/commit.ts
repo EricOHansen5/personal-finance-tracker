@@ -1,9 +1,15 @@
 import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
 import { addDays, localStamp } from "@/lib/dates";
 import type { Db } from "@/lib/db/client";
-import { imports, transactions, transferPairs } from "@/lib/db/schema";
+import {
+  accounts,
+  imports,
+  transactions,
+  transferPairs,
+} from "@/lib/db/schema";
 import { snapshotsFromRows } from "@/lib/networth/snapshots";
 import { recordSnapshots } from "@/lib/networth/store";
+import { LIABILITY_TYPES, type Snapshot } from "@/lib/networth/types";
 import { loadAliases, resolveMerchant } from "@/lib/normalize/aliases";
 import { loadCities } from "@/lib/normalize/cities";
 import { refreshRecurring } from "@/lib/recurring/refresh";
@@ -18,6 +24,16 @@ import {
 } from "./dedupe";
 import type { ParsedRow } from "./types";
 
+function accountType(db: Db, accountId: number): string {
+  return (
+    db
+      .select({ type: accounts.type })
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .get()?.type ?? "checking"
+  );
+}
+
 export function commitImport(
   db: Db,
   args: {
@@ -25,6 +41,8 @@ export function commitImport(
     filename: string;
     text: string;
     rows: ParsedRow[];
+    /** A statement-level closing balance (OFX), signed as the bank sent it. */
+    statementBalance?: Snapshot;
     backupPath?: string | null;
   },
 ) {
@@ -148,6 +166,17 @@ export function commitImport(
       args.accountId,
       snapshotsFromRows(args.rows),
     );
+    if (args.statementBalance) {
+      const { date, balanceCents } = args.statementBalance;
+      // Banks report what is owed on a card or loan as a negative balance;
+      // liabilities are stored as the positive amount owed (as SimpleFIN sync does).
+      const owed = LIABILITY_TYPES.has(
+        accountType(tx as unknown as Db, args.accountId),
+      );
+      recordSnapshots(tx as unknown as Db, args.accountId, [
+        { date, balanceCents: owed ? -balanceCents : balanceCents },
+      ]);
+    }
     const { categorized } = postProcessImport(tx as unknown as Db, freshIds);
     return {
       importId: imp.id,
@@ -205,10 +234,17 @@ export function undoImport(db: Db, importId: number): number {
       .flatMap((p) => [p.fromTxnId, p.toTxnId])
       .filter((id) => !ids.includes(id));
     tx.delete(imports).where(eq(imports.id, importId)).run(); // cascades transactions + pairs
+    // A loan payment's checking side was never hidden as a transfer, so it
+    // keeps its category; only partners that were transfers are reopened.
     if (partners.length)
       tx.update(transactions)
         .set({ isTransfer: false, categoryId: null, reviewed: false })
-        .where(inArray(transactions.id, partners))
+        .where(
+          and(
+            inArray(transactions.id, partners),
+            eq(transactions.isTransfer, true),
+          ),
+        )
         .run();
     return ids.length;
   });

@@ -1,4 +1,5 @@
 import { parseAmountToCents } from "@/lib/money";
+import type { Snapshot } from "@/lib/networth/types";
 import { cleanMerchant } from "@/lib/normalize/merchant";
 import type { ParsedRow } from "./types";
 
@@ -12,12 +13,24 @@ function ofxDate(s: string | undefined): string | null {
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
 
+/** The statement's closing balance, as the bank signs it (negative = owed on most cards). */
+function ledgerBalance(body: string): Snapshot | undefined {
+  const block = /<LEDGERBAL>([\s\S]*?)(?:<\/LEDGERBAL>|$)/i.exec(body)?.[1];
+  if (!block) return undefined;
+  const date = ofxDate(tag(block, "DTASOF"));
+  const balanceCents = parseAmountToCents(tag(block, "BALAMT") ?? "");
+  if (!date || balanceCents === null) return undefined;
+  return { date, balanceCents };
+}
+
 export function parseOfx(text: string): {
   accountId?: string;
   rows: ParsedRow[];
+  balance?: Snapshot;
 } {
   const body = text.slice(text.search(/<OFX>/i));
   const accountId = tag(body, "ACCTID");
+  const balance = ledgerBalance(body);
   const rows: ParsedRow[] = [];
   const re = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
   for (const m of body.matchAll(re)) {
@@ -35,5 +48,5 @@ export function parseOfx(text: string): {
       merchant: cleanMerchant(name || rawDescription),
     });
   }
-  return { accountId, rows };
+  return { accountId, rows, balance };
 }

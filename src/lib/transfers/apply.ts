@@ -2,10 +2,13 @@ import { and, eq, inArray, notExists, or, sql } from "drizzle-orm";
 import {
   ensureDefaultCategories,
   findCategoryId,
+  findCategoryIdBySeedKey,
 } from "@/lib/categories/ensure";
 import type { Db } from "@/lib/db/client";
 import { accounts, transactions, transferPairs } from "@/lib/db/schema";
 import { isOwnTransfer, pairTransfers } from "./detect";
+
+const MORTGAGE_WORDS = /mortgage|\bmtg\b|home loan/i;
 
 export function applyTransfers(
   db: Db,
@@ -51,10 +54,13 @@ export function applyTransfers(
         id: transactions.id,
         accountId: transactions.accountId,
         accountType: accounts.type,
+        accountLabel: sql<string>`${accounts.name} || ' ' || coalesce(${accounts.institution}, '')`,
         date: transactions.date,
         amountCents: transactions.amountCents,
         rawDescription: transactions.rawDescription,
         isTransfer: transactions.isTransfer,
+        categoryId: transactions.categoryId,
+        reviewed: transactions.reviewed,
       })
       .from(transactions)
       .innerJoin(accounts, eq(accounts.id, transactions.accountId))
@@ -86,10 +92,45 @@ export function applyTransfers(
         })
         .run();
     }
+    // A payment from checking into a loan is still spending: the budget has
+    // to see the mortgage go out. Only the loan's side is hidden as a
+    // transfer; the payment keeps (or gets) a debt category. Money drawn
+    // from a loan into checking stays an ordinary transfer on both sides.
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const loanPayments = pairs.filter(
+      (p) =>
+        byId.get(p.toId)?.accountType === "loan" &&
+        byId.get(p.fromId)?.accountType !== "loan",
+    );
+    const paymentIds = new Set(loanPayments.map((p) => p.fromId));
     mark(
-      pairs.flatMap((p) => [p.fromId, p.toId]),
+      pairs
+        .flatMap((p) => [p.fromId, p.toId])
+        .filter((id) => !paymentIds.has(id)),
       true,
     );
+    for (const p of loanPayments) {
+      const payment = byId.get(p.fromId);
+      const loan = byId.get(p.toId);
+      if (!payment || !loan) continue;
+      // Keep a category the user chose, unless it was "Transfer" itself.
+      const keep =
+        payment.reviewed &&
+        payment.categoryId !== null &&
+        payment.categoryId !== transferCat;
+      const categoryId = keep
+        ? payment.categoryId
+        : (findCategoryIdBySeedKey(
+            tx as Db,
+            MORTGAGE_WORDS.test(loan.accountLabel)
+              ? "home/rent-mortgage"
+              : "debt/loan-payments",
+          ) ?? payment.categoryId);
+      tx.update(transactions)
+        .set({ isTransfer: false, categoryId, reviewed: true })
+        .where(eq(transactions.id, payment.id))
+        .run();
+    }
 
     const pairedIds = new Set(pairs.flatMap((p) => [p.fromId, p.toId]));
     // Only rows newly marked by this run are counted; a row an earlier run

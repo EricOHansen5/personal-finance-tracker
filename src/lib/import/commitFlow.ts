@@ -76,6 +76,7 @@ export function runCommitFlow(
       filename: args.filename,
       text: args.text,
       rows: preview.rows,
+      statementBalance: preview.statementBalance,
       backupPath,
     });
   } catch (e) {

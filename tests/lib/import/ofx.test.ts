@@ -18,6 +18,20 @@ describe("parseOfx", () => {
       amountCents: 240000,
     });
   });
+  it("reads the statement's ledger balance", () => {
+    expect(out.balance).toEqual({ date: "2026-03-15", balanceCents: 331501 });
+  });
+  it("reads an XML-style ledger balance", () => {
+    const xml = `<OFX><LEDGERBAL><BALAMT>-1234.56</BALAMT><DTASOF>20260401120000</DTASOF></LEDGERBAL></OFX>`;
+    expect(parseOfx(xml).balance).toEqual({
+      date: "2026-04-01",
+      balanceCents: -123456,
+    });
+  });
+  it("has no balance when the file carries none", () => {
+    const xml = `<OFX><STMTTRN><DTPOSTED>20260101</DTPOSTED><TRNAMT>-1.00</TRNAMT><NAME>X</NAME></STMTTRN></OFX>`;
+    expect(parseOfx(xml).balance).toBeUndefined();
+  });
   it("parses XML-style OFX 2.x too", () => {
     const xml = `<?xml version="1.0"?><OFX><STMTTRN><DTPOSTED>20260101</DTPOSTED><TRNAMT>-1.00</TRNAMT><NAME>X</NAME></STMTTRN></OFX>`;
     expect(parseOfx(xml).rows[0]).toMatchObject({

@@ -3,6 +3,7 @@ import { openDb } from "@/lib/db/client";
 import { accounts, bankProfiles, transactions } from "@/lib/db/schema";
 import { type CommitFlowDeps, runCommitFlow } from "@/lib/import/commitFlow";
 import { BUILTIN_PROFILES } from "@/lib/import/profiles";
+import { listSnapshots } from "@/lib/networth/store";
 
 /** A file whose header signature matches the builtin "Chase (card)" profile. */
 const CHASE_CSV = [
@@ -142,4 +143,46 @@ describe("runCommitFlow", () => {
       }),
     ).toEqual({ ok: false, error: "No rows parsed" });
   });
+
+  it("records an OFX statement's ledger balance as a snapshot", () => {
+    const { db, deps } = setup();
+    const [chk] = db
+      .insert(accounts)
+      .values({ name: "Chk", type: "checking" })
+      .returning()
+      .all();
+    const res = runCommitFlow(db, deps, {
+      accountId: chk.id,
+      filename: "chk.qfx",
+      text: ofx("-6.75", "3315.01"),
+    });
+    expect(res).toMatchObject({ ok: true, newCount: 1 });
+    expect(listSnapshots(db)).toEqual([
+      { accountId: chk.id, date: "2026-03-15", balanceCents: 331501 },
+    ]);
+  });
+
+  it("stores an OFX liability balance as the amount owed", () => {
+    const { db, acct, deps } = setup(); // acct is a credit card
+    runCommitFlow(db, deps, {
+      accountId: acct.id,
+      filename: "card.qfx",
+      text: ofx("-6.75", "-1234.56"),
+    });
+    expect(listSnapshots(db)).toEqual([
+      { accountId: acct.id, date: "2026-03-15", balanceCents: 123456 },
+    ]);
+  });
 });
+
+/** A one-transaction OFX statement with a ledger balance as of 2026-03-15. */
+function ofx(amount: string, balance: string) {
+  return [
+    "OFXHEADER:100",
+    "<OFX><STMTRS><BANKTRANLIST>",
+    `<STMTTRN><DTPOSTED>20260302<TRNAMT>${amount}<NAME>BLUE BOTTLE</STMTTRN>`,
+    "</BANKTRANLIST>",
+    `<LEDGERBAL><BALAMT>${balance}<DTASOF>20260315</LEDGERBAL>`,
+    "</STMTRS></OFX>",
+  ].join("\n");
+}

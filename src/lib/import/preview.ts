@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import type { DateFormat } from "@/lib/dates";
+import type { Snapshot } from "@/lib/networth/types";
 import { parseCsv } from "./csv";
 import { detectDateFormat, detectProfile } from "./detect";
 import { normalizeRow } from "./normalizeRow";
@@ -18,6 +19,8 @@ export type PreviewResult = {
   sampleRaw: RawRow[];
   headerless: boolean;
   outflowCheck: { negativeCount: number; positiveCount: number };
+  /** OFX only: the statement's closing balance, signed as the bank sent it. */
+  statementBalance?: Snapshot;
 };
 
 const looksLikeDate = (s: string) =>
@@ -54,7 +57,7 @@ export function buildPreview(
 ): PreviewResult {
   if (isPdf(filename, text)) throw new Error(PDF_MESSAGE);
   if (isOfx(filename, text)) {
-    const { rows } = parseOfx(text);
+    const { rows, balance } = parseOfx(text);
     return {
       kind: "ofx",
       headers: [],
@@ -66,6 +69,7 @@ export function buildPreview(
       sampleRaw: [],
       headerless: false,
       outflowCheck: outflowCheck(rows),
+      statementBalance: balance,
     };
   }
 

@@ -73,6 +73,34 @@ export const BUILTIN_RULES: BuiltinRule[] = [
   },
   { pattern: "acorns", category: "savings/savings-investing", priority: 20 },
   { pattern: "robinhood", category: "savings/savings-investing", priority: 20 },
+  // Loan payments to lenders that report only a balance (no matching inflow
+  // to pair with), so the payment still lands in the budget.
+  {
+    pattern: "mortgage",
+    category: "home/rent-mortgage",
+    field: "raw",
+    priority: 20,
+  },
+  {
+    pattern: "\\bmtg\\b",
+    category: "home/rent-mortgage",
+    field: "raw",
+    matchType: "regex",
+    priority: 20,
+  },
+  {
+    pattern: "heloc",
+    category: "debt/loan-payments",
+    field: "raw",
+    priority: 20,
+  },
+  {
+    pattern: "\\bloan\\s+(?:pmt|pymt|payment)\\b",
+    category: "debt/loan-payments",
+    field: "raw",
+    matchType: "regex",
+    priority: 20,
+  },
   { pattern: "affirm", category: "debt/loan-payments", priority: 20 },
   { pattern: "klarna", category: "debt/loan-payments", priority: 20 },
   {

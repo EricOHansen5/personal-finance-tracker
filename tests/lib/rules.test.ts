@@ -256,6 +256,38 @@ describe("builtin income rules are inflow-only", () => {
   });
 });
 
+describe("builtin loan payment rules", () => {
+  const db = openDb(":memory:");
+  ensureDefaultCategories(db);
+  ensureBuiltinRules(db);
+  const all = db.select().from(rules).all();
+  const pick = (rawDescription: string) =>
+    pickRule(all, {
+      id: 1,
+      merchant: rawDescription,
+      rawDescription,
+      accountId: 1,
+      amountCents: -183000,
+    })?.categoryId;
+
+  it.each(["FREEDOM MTG DES:MTG PYMT ID:0042", "FREEDOM MORTGAGE PAYMENT"])(
+    "files %s under Rent/Mortgage",
+    (desc) => {
+      expect(pick(desc)).toBe(cat(db, "Rent/Mortgage"));
+    },
+  );
+  it.each([
+    "FIRST SECURITY BANK HELOC PMT",
+    "CLEARWATER CU LOAN PMT",
+    "ONLINE LOAN PAYMENT 1234",
+  ])("files %s under Loan payments", (desc) => {
+    expect(pick(desc)).toBe(cat(db, "Loan payments"));
+  });
+  it("does not mistake a word that merely contains mtg", () => {
+    expect(pick("MTGO TICKETS")).not.toBe(cat(db, "Rent/Mortgage"));
+  });
+});
+
 describe("applyRules with builtin rules", () => {
   it("categorizes uncategorized, non-transfer, unreviewed rows and counts hits", () => {
     const db = openDb(":memory:");

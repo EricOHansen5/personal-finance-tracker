@@ -13,10 +13,37 @@ describe("guessAccountType", () => {
   ])("treats %s as a credit card", (name) => {
     expect(guessAccountType(name)).toBe("credit");
   });
-  it.each(["TOTAL CHECKING (0000)", "EVERYDAY CHECKING", "Savings"])(
+  it.each(["TOTAL CHECKING (0000)", "EVERYDAY CHECKING", "Chase Bank"])(
     "leaves %s as checking",
     (name) => {
       expect(guessAccountType(name)).toBe("checking");
     },
   );
+  it.each([
+    "Savings",
+    "USAA Savings",
+    "Marcus by Goldman Sachs Online Savings Account",
+    "High Yield Money Market",
+    "12 Month CD",
+  ])("treats %s as savings", (name) => {
+    expect(guessAccountType(name)).toBe("savings");
+  });
+  it.each([
+    "Freedom Mortgage",
+    "First Security Bank HELOC",
+    "Home Equity Line of Credit",
+    "Clearwater Credit Union Solar Loan",
+    "Auto Loan",
+  ])("treats %s as a loan", (name) => {
+    expect(guessAccountType(name)).toBe("loan");
+  });
+  it.each([
+    "Roth IRA",
+    "Fidelity 401(k)",
+    "401k Plan",
+    "Acorns Invest",
+    "Individual Brokerage",
+  ])("treats %s as an investment account", (name) => {
+    expect(guessAccountType(name)).toBe("investment");
+  });
 });

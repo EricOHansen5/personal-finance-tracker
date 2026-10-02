@@ -103,6 +103,7 @@ ImportDropzone / ImportFlow (client)
               findFuzzyDuplicates() (same cents, ±3 days, similarity ≥ 0.85) → possibleDuplicate
               insert imports + transactions in one db.transaction
               recordSnapshots(snapshotsFromRows()) → balance column feeds net worth
+              (OFX: the statement's LEDGERBAL is recorded too, as the amount owed on a card or loan)
               postProcessImport(tx, freshIds):
                 applyTransfers() → applyRules({ transactionIds }) →
                 findRefundCandidates() → refreshRecurring()
@@ -111,6 +112,13 @@ ImportDropzone / ImportFlow (client)
 
 `undoImport` deletes the `imports` row. Transactions and transfer pairs cascade,
 and the transfer partner rows that remain are un-marked.
+
+**Loan payments stay spending.** When `applyTransfers` pairs an outflow with
+an inflow on a `loan` account, only the loan's side is marked as a transfer.
+The paying side stays visible to Budget and Insights under Rent/Mortgage (when
+the loan's name or institution looks like a mortgage) or Loan payments, unless
+the user already gave it another category. Money drawn *from* a loan into
+checking is an ordinary transfer on both sides.
 
 **SimpleFIN joins the same pipeline.** `syncNowAction` (`src/actions/simplefin.ts`)
 calls `runSync(db, fetch, …)` in `src/lib/simplefin/sync.ts`. That function
